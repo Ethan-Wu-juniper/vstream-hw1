@@ -8,7 +8,7 @@ class CNN(torch.nn.Module):
         self.stage1 = self._make_stage(3, 64, num_blocks=1, max_pooling=True)
         self.stage2 = self._make_stage(64, 128, num_blocks=1, max_pooling=True)
         self.stage3 = self._make_stage(128, 64, num_blocks=1, max_pooling=True)
-        self.stage6 = self._make_stage(64, 64, num_blocks=1, max_pooling=True)
+        self.stage4 = self._make_stage(64, 64, num_blocks=1, max_pooling=True)
 
         self.classifier = nn.Sequential(
                 nn.Flatten(start_dim=1, end_dim=-1),
@@ -45,7 +45,7 @@ class CNN(torch.nn.Module):
         x = self.stage1(x)
         x = self.stage2(x)
         x = self.stage3(x)
-        x = self.stage6(x)
+        x = self.stage4(x)
         logits = self.classifier(x)
 
         return logits
