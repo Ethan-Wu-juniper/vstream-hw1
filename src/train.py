@@ -58,6 +58,8 @@ class ImageClassifier:
         plt.plot(train_step, train_y, color='blue', label=f"training {plot_type}")
         plt.plot(log['val_step'], log[f'val_{plot_type}'], color='yellow', label=f"validation {plot_type}")
         limit = 1 if plot_type=="acc" else 3
+        title = "accuracy curve" if plot_type=="acc" else "loss curve"
+        plt.title(title)
         plt.ylim(0, limit)
         plt.legend()
 
