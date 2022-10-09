@@ -3,6 +3,10 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 from sklearn.metrics import *
 from tqdm.auto import tqdm
+from uuid import uuid1
+import os
+import matplotlib.pyplot as plt
+import pandas as pd
 
 from dataset import load_dataset
 from model import VGG16
@@ -10,6 +14,7 @@ from config import Variables
 
 class ImageClassifier:
     def __init__(self, model, dataloaders, validate=True):
+        self.id = str(uuid1())[:5]
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = model.to(self.device)
         self.criterion = nn.CrossEntropyLoss()
@@ -19,6 +24,8 @@ class ImageClassifier:
         self.validate = validate
         self.log_step = 1
         self.step = 0
+        self.min_loss = float("inf")
+        self.state_dict = []
         self.log = {
             "train_acc": [],
             "train_loss": [],
@@ -28,6 +35,65 @@ class ImageClassifier:
             "val_step": []
         }
 
+    @classmethod
+    def from_state(cls, model, dataloaders, state_dict):
+        model.load_state_dict(torch.load(state_dict))
+        return cls(model, dataloaders)
+
+    @staticmethod
+    def mkdir(path):
+        try:
+            os.makedirs(path)
+        except FileExistsError:
+            pass
+
+    def get_num_params(self):
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
+    def plot(self, plot_type, step=10, show=True, dump=True):
+        log = self.log
+        train_step = list(filter(lambda data: data[1]%step==0 or data[0]==len(log['train_step'])-1, enumerate(log['train_step'])))
+        train_step = [i[0] for i in train_step]
+        train_y = [log[f'train_{plot_type}'][i] for i in train_step]
+        plt.plot(train_step, train_y, color='blue', label=f"training {plot_type}")
+        plt.plot(log['val_step'], log[f'val_{plot_type}'], color='yellow', label=f"validation {plot_type}")
+        limit = 1 if plot_type=="acc" else 200
+        plt.ylim(0, limit)
+        plt.legend()
+
+        if show:
+            plt.show()
+        if dump:
+            path = "plot"
+            self.mkdir(path)
+            plt.savefig(f'{path}{self.id}_{plot_type}.png')
+
+    def save_state(self):
+        print("-- saving dict --")
+        self.state_dict.append((self.min_loss, self.model.state_dict()))
+        self.state_dict = sorted(self.state_dict, key=lambda x: x[0])[:3]
+
+    def dump_state(self):
+        path = "state_dict"
+        self.mkdir(path)
+        for loss, state in self.state_dict:
+            torch.save(state, f"{path}/{self.id}_loss{loss:.3f}.pt")
+
+    def test(self):
+        self.model.eval()
+        predicate = []
+        with torch.no_grad():
+            running_loss = 0.0
+            for batch, data in enumerate(tqdm(self.loaders['test'], desc="testing ...")):
+                images, path = data
+                outputs = self.model(images.to(self.device))
+                _, predicted = torch.max(outputs, 1)
+                predicate.extend(list(zip(path, predicted.cpu().tolist())))
+        df = pd.DataFrame(predicate, columns=["name", "label"]).sort_values(by="name", key=lambda path: path.map(lambda x: int(x.replace(".jpg", ""))))
+
+        return df
+
+
     def validation(self, log=True):
         self.model.eval()
         ground_truth = []
@@ -36,12 +102,14 @@ class ImageClassifier:
             running_loss = 0.0
             for batch, data in enumerate(tqdm(self.loaders['val'], desc="validating ...")):
                 images, labels = [d.to(self.device) for d in data]
-                outputs = self.model(images.to(self.device))
+                outputs = self.model(images)
                 _, predicted = torch.max(outputs, 1)
+                # print("outputs :", outputs)
+                # print("predicted :", predicted)
 
                 loss = self.criterion(outputs, labels)
-                ground_truth.extend(labels.cpu())
-                predicate.extend(predicted.cpu())
+                ground_truth.extend(labels.cpu().tolist())
+                predicate.extend(predicted.cpu().tolist())
                 running_loss += loss.item()
             acc = accuracy_score(ground_truth, predicate)
             running_loss /= (batch+1)
@@ -50,12 +118,16 @@ class ImageClassifier:
                 self.log["val_loss"].append(running_loss)
                 self.log["val_step"].append(self.step)
 
+        if self.min_loss > running_loss:
+            self.min_loss = running_loss
+            self.save_state()
+
         print("accuracy score :", acc, "loss :", running_loss)
         return (ground_truth, predicate)
 
-    def train(self):
+    def train(self, num_epoch=10, num_patient=3):
         print("-- Start Training --")
-        for epoch in range(10):
+        for epoch in range(num_epoch):
             self.model.train()
             running_loss = 0.0
 
@@ -81,6 +153,8 @@ class ImageClassifier:
             print(f'[{epoch + 1} epoch, {batch + 1} batches] loss: {running_loss / (batch+1):.3f}')
             running_loss = 0.0
 
+
+
             if self.validate:
                 self.validation()  
 
@@ -98,4 +172,14 @@ if __name__ == "__main__":
     }
 
     clf = ImageClassifier(model, dataloaders)
-    clf.train()
+
+    clf.train(100)
+    clf.plot("loss", step=10)
+    print(clf.get_num_params())
+    clf.dump_state()
+
+    loss, state = clf.state_dict[0]
+    model_test = VGG16()
+    clf_test = ImageClassifier.from_state(model_test, dataloaders, f"state_dict/{clf.id}_loss{loss:.3f}.pt")
+    out_df = clf_test.test()
+    out_df.to_csv("result.csv", index=False)

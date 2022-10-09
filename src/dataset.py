@@ -15,7 +15,7 @@ class ImgDataset(Dataset):
         path = self.images[idx][0]
         img = self.images[idx][1]
         if self.label_df is None:
-            return img
+            return img, path
         else:
             label = self.label_df.loc[path].item()
             return img, label
