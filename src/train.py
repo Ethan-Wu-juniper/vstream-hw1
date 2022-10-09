@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from dataset import load_dataset
-from model import VGG16
+from model import CNN
 from config import Variables
 
 class ImageClassifier:
@@ -57,16 +57,16 @@ class ImageClassifier:
         train_y = [log[f'train_{plot_type}'][i] for i in train_step]
         plt.plot(train_step, train_y, color='blue', label=f"training {plot_type}")
         plt.plot(log['val_step'], log[f'val_{plot_type}'], color='yellow', label=f"validation {plot_type}")
-        limit = 1 if plot_type=="acc" else 200
+        limit = 1 if plot_type=="acc" else 3
         plt.ylim(0, limit)
         plt.legend()
 
-        if show:
-            plt.show()
         if dump:
             path = "plot"
             self.mkdir(path)
             plt.savefig(f'{path}{self.id}_{plot_type}.png')
+        if show:
+            plt.show()
 
     def save_state(self):
         print("-- saving dict --")
@@ -162,7 +162,7 @@ class ImageClassifier:
 
 
 if __name__ == "__main__":
-    model = VGG16()
+    model = CNN()
     datasets = {
         split: load_dataset(split) for split in Variables.SPLIT
     }
@@ -177,9 +177,3 @@ if __name__ == "__main__":
     clf.plot("loss", step=10)
     print(clf.get_num_params())
     clf.dump_state()
-
-    loss, state = clf.state_dict[0]
-    model_test = VGG16()
-    clf_test = ImageClassifier.from_state(model_test, dataloaders, f"state_dict/{clf.id}_loss{loss:.3f}.pt")
-    out_df = clf_test.test()
-    out_df.to_csv("result.csv", index=False)

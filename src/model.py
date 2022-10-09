@@ -2,28 +2,21 @@ import torch
 import torch.nn as nn
 from config import Variables
 
-class VGG16(torch.nn.Module):
+class CNN(torch.nn.Module):
     def __init__(self, num_classes=Variables.NUM_CLASS):
-        super(VGG16, self).__init__()
-        self.stage1 = self._make_stage(3, 64, num_blocks=2, max_pooling=True)
-        self.stage2 = self._make_stage(64, 128, num_blocks=2, max_pooling=True)
-        self.stage3 = self._make_stage(128, 256, num_blocks=4, max_pooling=True)
-        self.stage4 = self._make_stage(256, 512, num_blocks=4, max_pooling=True)
-        self.stage5 = self._make_stage(512, 512, num_blocks=4, max_pooling=True)
+        super(CNN, self).__init__()
+        self.stage1 = self._make_stage(3, 64, num_blocks=1, max_pooling=True)
+        self.stage2 = self._make_stage(64, 128, num_blocks=1, max_pooling=True)
+        self.stage3 = self._make_stage(128, 64, num_blocks=1, max_pooling=True)
+        self.stage6 = self._make_stage(64, 64, num_blocks=1, max_pooling=True)
 
         self.classifier = nn.Sequential(
                 nn.Flatten(start_dim=1, end_dim=-1),
-                nn.Linear(512*7*7, 4096),
-                nn.ReLU(True),
-                nn.Linear(4096, 4096),
-                nn.ReLU(True),
-                nn.Linear(4096, num_classes)
+                nn.Linear(64*2*2, num_classes)
         )
 
         for m in self.modules():
             if isinstance(m, torch.nn.Conv2d):
-                #n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                #m.weight.data.normal_(0, np.sqrt(2. / n))
                 m.weight.detach().normal_(0, 0.05)
                 if m.bias is not None:
                     m.bias.detach().zero_()
@@ -43,7 +36,7 @@ class VGG16(torch.nn.Module):
             ))
             stage.add_module(f"relu{i+1}", nn.ReLU())
         if max_pooling:
-            stage.add_module("maxpool", nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)))
+            stage.add_module("maxpool", nn.MaxPool2d(kernel_size=3, stride=3))
 
         return stage
 
@@ -52,8 +45,7 @@ class VGG16(torch.nn.Module):
         x = self.stage1(x)
         x = self.stage2(x)
         x = self.stage3(x)
-        x = self.stage4(x)
-        x = self.stage5(x)
+        x = self.stage6(x)
         logits = self.classifier(x)
 
         return logits
